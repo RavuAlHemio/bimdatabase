@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block body %}
+<h1>Bim Database</h1>
+
+<p class="json-urls">
+  JSON URLs:
+  {% for company in companies %}
+    {% if !loop.first %}
+      &middot;
+    {% endif %}
+    <a href="{{ base_path }}/json?company={{ company|url }}">{{ company }}</a>
+  {% endfor %}
+</p>
+
+<table class="bim-table">
+  <tr>
+    <th class="id">ID</th>
+    <th class="company">Company</th>
+    <th class="veh-number">Number</th>
+    <th class="type-code">Type</th>
+    <th class="veh-class">Class</th>
+    <th class="in-service-since">In Service Since</th>
+    <th class="out-of-service-since">Out of Service Since</th>
+    <th class="manufacturer">Manufacturer</th>
+    <th class="tools">Tools</th>
+  </tr>
+  {% for vehicle in vehicles %}
+    <tr>
+      <td class="id">{{ vehicle.id }}</td>
+      <td class="company">{{ vehicle.company }}</td>
+      <td class="veh-number">{{ vehicle.veh_number }}</td>
+      <td class="type-code">{{ vehicle.type_code }}</td>
+      <td class="veh-class">{{ vehicle.veh_class }}</td>
+      <td class="in-service-since{% if vehicle.in_service_since.is_none() %} null{% endif %}">{% if let Some(iss) = vehicle.in_service_since %}{{ iss }}{% endif %}</td>
+      <td class="out-of-service-since{% if vehicle.out_of_service_since.is_none() %} null{% endif %}">{% if let Some(ooss) = vehicle.out_of_service_since %}{{ ooss }}{% endif %}</td>
+      <td class="manufacturer{% if vehicle.manufacturer.is_none() %} null{% endif %}">{% if let Some(manuf) = vehicle.manufacturer %}{{ manuf }}{% endif %}</td>
+      <td class="tools"><a href="{{ base_path }}/edit?id={{ vehicle.id }}">&#9999;&#65039;</a></td>
+    </tr>
+  {% endfor %}
+</table>
+
+<p class="add-link"><a href="{{ base_path }}/add">&#10133;</a></p>
+{% endblock %}

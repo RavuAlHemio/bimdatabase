@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block body %}
+
+{% if let Some(id) = edit_id %}
+<h1>Edit Vehicle {{ id }} in Bim Database</h1>
+{% else %}
+<h1>Add Vehicle to Bim Database</h1>
+{% endif %}
+
+<form method="post">
+  <table class="add-edit-table">
+    <tr>
+      <td>
+        <label for="bimdb-ae-company">Company:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-company" name="company" minlength="1" maxlength="256"{% if let Some(value) = company %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-veh-number">Vehicle number:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-veh-number" name="veh-number" minlength="1" maxlength="256"{% if let Some(value) = veh_number %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-type-code">Type code:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-type-code" name="type-code" minlength="1" maxlength="256"{% if let Some(value) = type_code %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-veh-class">Vehicle class:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-veh-class" name="veh-class" minlength="1" maxlength="32"{% if let Some(value) = veh_class %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-in-service-since">In service since:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-in-service-since" name="in-service-since" minlength="1" maxlength="32"{% if let Some(value) = in_service_since %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-out-of-service-since">Out of service since:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-out-of-service-since" name="out-of-service-since" minlength="1" maxlength="32"{% if let Some(value) = out_of_service_since %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-manufacturer">Manufacturer:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-manufacturer" name="manufacturer" minlength="1" maxlength="32"{% if let Some(value) = manufacturer %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-other-data">Other data:</label>
+      </td>
+      <td>
+        <textarea id="bimdb-ae-other-data" name="other-data" minlength="2">{% if let Some(value) = other_data %}{{ value }}{% else %}{}{% endif %}</textarea>
+      </td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>
+        <input type="submit" value="{% if edit_id.is_some() %}Edit{% else %}Add{% endif %}" />
+      </td>
+    </tr>
+  </table>
+</form>
+
+{% endblock %}

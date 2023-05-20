@@ -1,0 +1,9 @@
+[http]
+listen_socket_addr = "127.0.0.1:8081"
+base_path = "/bimdb"
+
+[db]
+username = "bimdbuser"
+password = "eesQXd4vmL8UoCRONARwqRJ3VDAdT8nr"
+hostname = "localhost"
+db_name = "sharpircbot"
