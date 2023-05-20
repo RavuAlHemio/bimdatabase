@@ -15,7 +15,6 @@
 
 <table class="bim-table">
   <tr>
-    <th class="id">ID</th>
     <th class="company">Company</th>
     <th class="veh-number">Number</th>
     <th class="type-code">Type</th>
@@ -27,7 +26,6 @@
   </tr>
   {% for vehicle in vehicles %}
     <tr>
-      <td class="id">{{ vehicle.id }}</td>
       <td class="company">{{ vehicle.company }}</td>
       <td class="veh-number">{{ vehicle.veh_number }}</td>
       <td class="type-code">{{ vehicle.type_code }}</td>
