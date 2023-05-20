@@ -42,6 +42,7 @@ struct IndexTemplate {
     pub companies: BTreeSet<String>,
     pub vehicles: Vec<BimPart>,
     pub base_path: String,
+    pub page: i64,
 }
 
 #[derive(Template)]
@@ -286,6 +287,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Respo
         companies,
         vehicles,
         base_path: config.http.base_path.clone(),
+        page,
     };
     let template_text = template.render()
         .expect("failed to render template");

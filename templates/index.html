@@ -13,6 +13,8 @@
   {% endfor %}
 </p>
 
+<p class="add-link"><a href="{{ base_path }}/add">&#10133;</a></p>
+
 <table class="bim-table">
   <tr>
     <th class="company">Company</th>
@@ -33,10 +35,18 @@
       <td class="in-service-since{% if vehicle.in_service_since.is_none() %} null{% endif %}">{% if let Some(iss) = vehicle.in_service_since %}{{ iss }}{% endif %}</td>
       <td class="out-of-service-since{% if vehicle.out_of_service_since.is_none() %} null{% endif %}">{% if let Some(ooss) = vehicle.out_of_service_since %}{{ ooss }}{% endif %}</td>
       <td class="manufacturer{% if vehicle.manufacturer.is_none() %} null{% endif %}">{% if let Some(manuf) = vehicle.manufacturer %}{{ manuf }}{% endif %}</td>
-      <td class="tools"><a href="{{ base_path }}/edit?id={{ vehicle.id }}">&#9999;&#65039;</a></td>
+      <td class="tools"><a href="{{ base_path }}/edit?id={{ vehicle.id }}" title="edit">&#9999;&#65039;</a></td>
     </tr>
   {% endfor %}
 </table>
 
-<p class="add-link"><a href="{{ base_path }}/add">&#10133;</a></p>
+<p class="pagination-links">
+{% if page > 0 %}
+  <a href="{{ base_path }}/?page={{ page - 1 }}" title="previous page">&#11013;&#65039;</a>
+{% endif %}
+{% if vehicles.len() > 0 %}
+  <a href="{{ base_path }}/?page={{ page + 1 }}" title="next page">&#10145;&#65039;</a>
+{% endif %}
+</p>
+
 {% endblock %}
