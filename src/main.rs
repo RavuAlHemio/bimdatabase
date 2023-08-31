@@ -364,6 +364,7 @@ async fn handle_json(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
             "out_of_service_since": out_of_service_since,
             "manufacturer": manufacturer,
             "other_data": other_data,
+            "fixed_coupling": [],
         }));
     }
 
