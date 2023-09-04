@@ -13,6 +13,16 @@
   {% endfor %}
 </p>
 
+<p class="cbor-urls">
+  CBOR URLs:
+  {% for company in companies %}
+    {% if !loop.first %}
+      &middot;
+    {% endif %}
+    <a href="{{ base_path }}/cbor?company={{ company|url }}">{{ company }}</a>
+  {% endfor %}
+</p>
+
 <p class="add-link"><a href="{{ base_path }}/add">&#10133;</a></p>
 
 <table class="bim-table">

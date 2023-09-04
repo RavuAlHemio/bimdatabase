@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use askama::Template;
+use ciborium::cbor;
 use form_urlencoded;
 use hyper::{Body, Method, Request, Response};
 use hyper::server::conn::AddrStream;
@@ -57,6 +58,12 @@ struct AddEditTemplate {
     pub out_of_service_since: Option<String>,
     pub manufacturer: Option<String>,
     pub other_data: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum ExportFormat {
+    Json,
+    Cbor,
 }
 
 
@@ -299,7 +306,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Respo
 }
 
 #[instrument(skip_all)]
-async fn handle_json(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_export(_remote_addr: SocketAddr, request: Request<Body>, format: ExportFormat) -> Response<Body> {
     if request.method() != Method::GET {
         return return_405(request.method(), &[Method::GET]);
     }
@@ -347,38 +354,79 @@ async fn handle_json(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
         },
     };
 
-    let mut vehicles = Vec::new();
-    for row in vehicle_rows {
-        let veh_number: String = row.get(0);
-        let type_code: String = row.get(1);
-        let veh_class: String = row.get(2);
-        let in_service_since: Option<String> = row.get(3);
-        let out_of_service_since: Option<String> = row.get(4);
-        let manufacturer: Option<String> = row.get(5);
-        let other_data: serde_json::Value = row.get(6);
-        vehicles.push(serde_json::json!({
-            "number": veh_number,
-            "vehicle_class": veh_class,
-            "type_code": type_code,
-            "in_service_since": in_service_since,
-            "out_of_service_since": out_of_service_since,
-            "manufacturer": manufacturer,
-            "other_data": other_data,
-            "fixed_coupling": [],
-        }));
-    }
-
-    let json_text = match serde_json::to_string_pretty(&vehicles) {
-        Ok(jt) => jt,
-        Err(e) => {
-            error!("failed to serialize vehicles to JSON: {}", e);
-            return return_500();
+    let (data, content_type) = match format {
+        ExportFormat::Json => {
+            let mut vehicles = Vec::new();
+            for row in vehicle_rows {
+                let veh_number: String = row.get(0);
+                let type_code: String = row.get(1);
+                let veh_class: String = row.get(2);
+                let in_service_since: Option<String> = row.get(3);
+                let out_of_service_since: Option<String> = row.get(4);
+                let manufacturer: Option<String> = row.get(5);
+                let other_data: serde_json::Value = row.get(6);
+                vehicles.push(serde_json::json!({
+                    "number": veh_number,
+                    "vehicle_class": veh_class,
+                    "type_code": type_code,
+                    "in_service_since": in_service_since,
+                    "out_of_service_since": out_of_service_since,
+                    "manufacturer": manufacturer,
+                    "other_data": other_data,
+                    "fixed_coupling": [],
+                }));
+            }
+            let json_data = match serde_json::to_string_pretty(&vehicles) {
+                Ok(jt) => jt.into_bytes(),
+                Err(e) => {
+                    error!("failed to serialize vehicles to JSON: {}", e);
+                    return return_500();
+                },
+            };
+            (json_data, "application/json")
+        },
+        ExportFormat::Cbor => {
+            let mut vehicles = Vec::new();
+            for row in vehicle_rows {
+                let veh_number: String = row.get(0);
+                let type_code: String = row.get(1);
+                let veh_class: String = row.get(2);
+                let in_service_since: Option<String> = row.get(3);
+                let out_of_service_since: Option<String> = row.get(4);
+                let manufacturer: Option<String> = row.get(5);
+                let other_data: serde_json::Value = row.get(6);
+                let cbor_value_res = cbor!({
+                    "number" => veh_number,
+                    "vehicle_class" => veh_class,
+                    "type_code" => type_code,
+                    "in_service_since" => in_service_since,
+                    "out_of_service_since" => out_of_service_since,
+                    "manufacturer" => manufacturer,
+                    "other_data" => other_data,
+                    "fixed_coupling" => [],
+                });
+                let cbor_value = match cbor_value_res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!("failed to construct CBOR value: {}", e);
+                        return return_500();
+                    },
+                };
+                vehicles.push(cbor_value);
+            }
+            let mut cbor_data = Vec::new();
+            if let Err(e) = ciborium::into_writer(&vehicles, &mut cbor_data) {
+                error!("failed to serialize vehicles to CBOR: {}", e);
+                return return_500();
+            }
+            (cbor_data, "application/cbor")
         },
     };
+
     Response::builder()
         .status(200)
-        .header("Content-Type", "application/json")
-        .body(Body::from(json_text))
+        .header("Content-Type", content_type)
+        .body(Body::from(data))
         .unwrap_or_else(|_| return_500())
 }
 
@@ -745,7 +793,8 @@ async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Resp
         handle_index(remote_addr, request).await
     } else if path_parts.len() == 1 {
         match path_parts[0].as_ref() {
-            "json" => handle_json(remote_addr, request).await,
+            "json" => handle_export(remote_addr, request, ExportFormat::Json).await,
+            "cbor" => handle_export(remote_addr, request, ExportFormat::Cbor).await,
             "add" => handle_add(remote_addr, request).await,
             "edit" => handle_edit(remote_addr, request).await,
             _ => return_404(),
