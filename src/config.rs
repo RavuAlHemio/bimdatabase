@@ -17,6 +17,7 @@ pub struct Config {
 pub struct HttpConfig {
     pub listen_socket_addr: SocketAddr,
     pub base_path: String,
+    #[serde(default)] pub static_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

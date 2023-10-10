@@ -18,12 +18,25 @@ use form_urlencoded;
 use hyper::{Body, Method, Request, Response};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
+use once_cell::sync::Lazy;
 use percent_encoding;
+use regex::Regex;
 use toml;
 use tracing::{error, instrument, warn};
 use tracing_subscriber;
 
 use crate::config::{CONFIG, Config};
+
+
+static STATIC_FILE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(concat!(
+    "^",
+    "[A-Za-z0-9_-]+",
+    "(?:",
+        "[.]",
+        "[A-Za-z0-9_-]+",
+    ")*",
+    "$",
+)).expect("failed to compile static file regex"));
 
 
 struct BimPart {
@@ -799,6 +812,45 @@ async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Resp
             "edit" => handle_edit(remote_addr, request).await,
             _ => return_404(),
         }
+    } else if path_parts.len() == 2 && path_parts[0] == "static" && STATIC_FILE_REGEX.is_match(path_parts[1].as_ref()) {
+        let static_path_opt = {
+            let config = CONFIG.get().expect("CONFIG not set?!");
+            config.http.static_path.as_ref().map(|sp| PathBuf::from(sp))
+        };
+        let mut static_path = match static_path_opt {
+            Some(sp) => sp,
+            None => return return_404(),
+        };
+        static_path.push(path_parts[1].as_ref());
+
+        if !static_path.is_file() {
+            return return_404();
+        }
+
+        let contents = match std::fs::read(&static_path) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("failed to read file {:?}: {}", static_path, e);
+                return return_500();
+            },
+        };
+        let content_type = if path_parts[1].ends_with(".css") {
+            "text/css"
+        } else if path_parts[1].ends_with(".js") {
+            "text/javascript"
+        } else if path_parts[1].ends_with(".js.map") {
+            "application/json"
+        } else if path_parts[1].ends_with(".ts") {
+            "text/x.typescript"
+        } else {
+            "application/octet-stream"
+        };
+
+        Response::builder()
+            .status(200)
+            .header("Content-Type", content_type)
+            .body(Body::from(contents))
+            .unwrap_or_else(|_| return_500())
     } else {
         return_404()
     }
