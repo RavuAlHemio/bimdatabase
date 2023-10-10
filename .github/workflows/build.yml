@@ -23,6 +23,9 @@ jobs:
           name: bimdatabase-debug
           path: |
             target/debug/bimdatabase
+            ts/src/bimdatabase.ts
+            ts/dist/bimdatabase.js
+            ts/dist/bimdatabase.js.map
   build-arch-release:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
@@ -45,3 +48,6 @@ jobs:
           name: bimdatabase-release
           path: |
             target/release/bimdatabase
+            ts/src/bimdatabase.ts
+            ts/dist/bimdatabase.js
+            ts/dist/bimdatabase.js.map

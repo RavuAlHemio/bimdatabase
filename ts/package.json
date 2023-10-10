@@ -1,0 +1,14 @@
+{
+  "name": "bimdatabase-ts",
+  "version": "0.1.0",
+  "description": "bimdatabase TypeScript",
+  "scripts": {
+    "build": "yarn parcel build --no-scope-hoist"
+  },
+  "source": "./src/bimdatabase.ts",
+  "devDependencies": {
+    "@parcel/core": "^2.9.3",
+    "parcel": "^2.9.3"
+  },
+  "packageManager": "yarn@3.6.4"
+}

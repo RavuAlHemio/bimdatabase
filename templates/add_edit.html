@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block addhead %}
+<script src="static/bimdatabase.js"></script>
+<script>BimDatabase.setUpAddEdit();</script>
+{% endblock %}
+
 {% block body %}
 
 {% if let Some(id) = edit_id %}
