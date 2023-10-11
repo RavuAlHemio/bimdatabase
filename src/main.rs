@@ -152,6 +152,7 @@ async fn db_connect() -> Option<tokio_postgres::Client> {
         .user(&db_config.username)
         .password(&db_config.password)
         .dbname(&db_config.db_name)
+        .port(db_config.port)
         .connect(tokio_postgres::NoTls).await;
     let (client, connection) = match connect_res {
         Ok(cc) => cc,

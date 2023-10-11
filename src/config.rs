@@ -26,4 +26,8 @@ pub struct DbConfig {
     pub password: String,
     pub hostname: String,
     pub db_name: String,
+    #[serde(default = "DbConfig::default_port")] pub port: u16,
+}
+impl DbConfig {
+    fn default_port() -> u16 { 5432 }
 }
