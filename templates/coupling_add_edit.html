@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+
+{% block addhead %}
+<script src="static/bimdatabase.js"></script>
+<script>BimDatabase.setUpCouplingAddEdit();</script>
+{% endblock %}
+
+{% block body %}
+
+{% if let Some(id) = edit_id %}
+<h1>Edit Coupling {{ id }} in Bim Database</h1>
+{% else %}
+<h1>Add Coupling to Bim Database</h1>
+{% endif %}
+
+{% call m::link_bar(base_path) %}
+
+{% if let Some(id) = edit_id %}
+<form method="post" action="coupling-delete?id={{ id }}">
+  <p><input type="submit" value="Delete this coupling" /></p>
+</form>
+{% endif %}
+
+<form method="post">
+  <table class="coupling-add-edit-table">
+    <tr>
+      <td>
+        <label for="bimdb-cae-company">Company:</label>
+      </td>
+      <td>
+        <select id="bimdb-cae-company" name="company" required="required">
+          {% for company_name in company_to_vehicles.keys() %}
+            <option value="{{ company_name }}"{% if let Some(comp) = company %}{% if company_name == comp %} selected="selected"{% endif %}{% endif %}>{{ company_name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-cae-vehicles">Vehicles:</label>
+      </td>
+      <td>
+        <textarea id="bimdb-cae-vehicles" name="vehicles">
+          {%- for vehicle in vehicles -%}
+            {{ vehicle }}{{ "\n" }}
+          {%- endfor -%}
+        </textarea>
+      </td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>
+        <input type="submit" value="{% if edit_id.is_some() %}Edit{% else %}Add{% endif %}" />
+      </td>
+    </tr>
+  </table>
+</form>
+
+<script type="application/json" id="bimdb-cae-company-to-vehicles">{{ self.company_to_vehicles_json()|safe }}</script>
+
+{% endblock %}

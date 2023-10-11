@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "macros.html" as m %}
+
+{% block body %}
+<h1>Coupling List in Bim Database</h1>
+
+{% call m::link_bar(base_path) %}
+
+<p class="add-link"><a href="{{ base_path }}/coupling-add">&#10133;</a></p>
+
+<table class="coupling-list boxtable">
+  <tr>
+    <th class="vehicles">Vehicles</th>
+    <th class="tools">Tools</th>
+  </tr>
+  {% for coupling in couplings %}
+    <tr>
+      <td class="vehicles">
+        {% for vehicle in coupling.vehicles -%}
+          {%- if !loop.first -%}
+          +
+          {%- endif -%}
+          <a class="veh-number" href="{{ base_path }}/edit?id={{ vehicle.id }}">{{ vehicle.veh_number }}</a>
+        {%- endfor %}
+      </td>
+      <td class="tools">
+        <a href="{{ base_path }}/coupling-edit?id={{ coupling.id }}" title="edit">&#9999;&#65039;</a>
+      </td>
+    </tr>
+  {% endfor %}
+</table>
+
+{% endblock %}
