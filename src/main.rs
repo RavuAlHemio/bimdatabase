@@ -62,6 +62,7 @@ struct IndexTemplate {
 #[derive(Template)]
 #[template(path = "add_edit.html")]
 struct AddEditTemplate {
+    pub base_path: String,
     pub edit_id: Option<i64>,
     pub company: Option<String>,
     pub veh_number: Option<String>,
@@ -446,8 +447,12 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Body>, format:
 
 #[instrument(skip_all)]
 async fn handle_add(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+    let base_path = &CONFIG
+        .get().expect("CONFIG not set?!")
+        .http.base_path;
     if request.method() == Method::GET {
         let template = AddEditTemplate {
+            base_path: base_path.clone(),
             edit_id: None,
             company: None,
             veh_number: None,
@@ -566,9 +571,6 @@ async fn handle_add(_remote_addr: SocketAddr, request: Request<Body>) -> Respons
             return return_500();
         }
 
-        let base_path = &CONFIG
-            .get().expect("CONFIG not set?!")
-            .http.base_path;
         Response::builder()
             .status(302)
             .header("Location", base_path)
@@ -606,6 +608,9 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
         None => return return_500(),
     };
 
+    let base_path = &CONFIG
+        .get().expect("CONFIG not set?!")
+        .http.base_path;
     if request.method() == Method::GET {
         // find entry
         let found_rows_res = db_conn.query(
@@ -641,6 +646,7 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
         let other_data: serde_json::Value = found_rows[0].get(7);
 
         let template = AddEditTemplate {
+            base_path: base_path.clone(),
             edit_id: Some(edit_id),
             company: Some(company),
             veh_number: Some(veh_number),
@@ -760,9 +766,6 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
             return return_500();
         }
 
-        let base_path = &CONFIG
-            .get().expect("CONFIG not set?!")
-            .http.base_path;
         Response::builder()
             .status(302)
             .header("Location", base_path)

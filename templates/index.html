@@ -1,7 +1,10 @@
 {% extends "base.html" %}
+{% import "macros.html" as m %}
 
 {% block body %}
 <h1>Bim Database</h1>
+
+{% call m::link_bar(base_path) %}
 
 <p class="json-urls">
   JSON URLs:
@@ -22,8 +25,6 @@
     <a href="{{ base_path }}/cbor?company={{ company|url }}">{{ company }}</a>
   {% endfor %}
 </p>
-
-<p class="add-link"><a href="{{ base_path }}/add">&#10133;</a></p>
 
 <table class="bim-table">
   <tr>

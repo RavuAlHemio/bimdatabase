@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "macros.html" as m %}
 
 {% block addhead %}
 <script src="static/bimdatabase.js"></script>
@@ -12,6 +13,8 @@
 {% else %}
 <h1>Add Vehicle to Bim Database</h1>
 {% endif %}
+
+{% call m::link_bar(base_path) %}
 
 <form method="post">
   <table class="add-edit-table">
