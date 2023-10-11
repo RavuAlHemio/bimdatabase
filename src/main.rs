@@ -446,161 +446,29 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Body>, format:
 }
 
 #[instrument(skip_all)]
-async fn handle_add(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
-    let base_path = &CONFIG
-        .get().expect("CONFIG not set?!")
-        .http.base_path;
-    if request.method() == Method::GET {
-        let template = AddEditTemplate {
-            base_path: base_path.clone(),
-            edit_id: None,
-            company: None,
-            veh_number: None,
-            type_code: None,
-            veh_class: None,
-            in_service_since: None,
-            out_of_service_since: None,
-            manufacturer: None,
-            other_data: None,
-        };
-        let template_text = template.render()
-            .expect("failed to render template");
-        Response::builder()
-            .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(Body::from(template_text))
-            .unwrap_or_else(|_| return_500())
-    } else if request.method() == Method::POST {
-        let (_request_head, request_body) = request.into_parts();
-        let request_bytes_res = hyper::body::to_bytes(request_body).await;
-        let request_bytes = match request_bytes_res {
-            Ok(rb) => rb,
-            Err(e) => {
-                error!("failed to read request bytes: {}", e);
-                return return_500();
-            },
-        };
-
-        let form_values: HashMap<Cow<str>, Cow<str>> = form_urlencoded::parse(&request_bytes)
-            .collect();
-
-        let company = match form_values.get("company") {
-            Some(c) => if c.len() == 0 {
-                return return_400("field 'company' must not be empty");
-            } else {
-                c
-            },
-            None => return return_400("field 'company' is required"),
-        };
-        let vehicle_number = match form_values.get("veh-number") {
-            Some(c) => if c.len() == 0 {
-                return return_400("field 'veh-number' must not be empty");
-            } else {
-                c
-            },
-            None => return return_400("field 'veh-number' is required"),
-        };
-        let type_code = match form_values.get("type-code") {
-            Some(c) => if c.len() == 0 {
-                return return_400("field 'type-code' must not be empty");
-            } else {
-                c
-            },
-            None => return return_400("field 'type-code' is required"),
-        };
-        let vehicle_class = match form_values.get("veh-class") {
-            Some(c) => if c.len() == 0 {
-                return return_400("field 'veh-class' must not be empty");
-            } else {
-                c
-            },
-            None => return return_400("field 'veh-class' is required"),
-        };
-        let in_service_since = form_values.get("in-service-since")
-            .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let out_of_service_since = form_values.get("out-of-service-since")
-            .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let manufacturer = form_values.get("manufacturer")
-            .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let other_data_string = match form_values.get("other-data") {
-            Some(c) => if c.len() == 0 {
-                return return_400("field 'other-data' must not be empty");
-            } else {
-                c
-            },
-            None => return return_400("field 'other-data' is required"),
-        };
-        let other_data: serde_json::Value = match serde_json::from_str(&other_data_string) {
-            Ok(od) => od,
-            Err(e) => {
-                error!("failed to parse other data: {}", e);
-                return return_400("field 'other-data' is not valid JSON");
-            },
-        };
-        if !other_data.is_object() {
-            return return_400("field 'other-data' ooes not contain a JSON object");
-        }
-
-        let db_conn = match db_connect().await {
-            Some(dbc) => dbc,
-            None => return return_500(),
-        };
-        let insert_res = db_conn.execute(
-            "
-                INSERT INTO bimdb.bims
-                    (
-                        id, company, veh_number, type_code,
-                        veh_class, in_service_since, out_of_service_since, manufacturer,
-                        other_data
-                    )
-                VALUES
-                    (
-                        DEFAULT, $1, $2, $3,
-                        $4, $5, $6, $7,
-                        $8
-                    )
-            ",
-            &[
-                &company, &vehicle_number, &type_code,
-                &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
-                &other_data,
-            ],
-        ).await;
-        if let Err(e) = insert_res {
-            error!("failed to insert vehicle: {}", e);
-            return return_500();
-        }
-
-        Response::builder()
-            .status(302)
-            .header("Location", base_path)
-            .header("Content-Type", "text/plain; charset=utf-8")
-            .body(Body::from("redirecting..."))
-            .unwrap_or_else(|_| return_500())
-    } else {
-        return_405(request.method(), &[Method::GET, Method::POST])
-    }
-}
-
-#[instrument(skip_all)]
-async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit: bool) -> Response<Body> {
     let query_pairs = match get_query_pairs(request.uri().query()) {
         Some(qp) => qp,
         None => return return_400("invalid UTF-8 in query"),
     };
 
-    let edit_id_str_opt = query_pairs.iter()
-        .filter(|(k, _v)| k == "id")
-        .map(|(_k, v)| v)
-        .flatten()
-        .last();
-    let edit_id_str = match edit_id_str_opt {
-        Some(eis) => eis,
-        None => return return_400("missing parameter 'id'"),
-    };
-    let edit_id: i64 = match edit_id_str.parse() {
-        Ok(ei) => ei,
-        Err(_) => return return_400("invalid parameter value for 'id'"),
+    let edit_id_opt = if edit {
+        let edit_id_str_opt = query_pairs.iter()
+            .filter(|(k, _v)| k == "id")
+            .map(|(_k, v)| v)
+            .flatten()
+            .last();
+        let edit_id_str = match edit_id_str_opt {
+            Some(eis) => eis,
+            None => return return_400("missing parameter 'id'"),
+        };
+        let edit_id: i64 = match edit_id_str.parse() {
+            Ok(ei) => ei,
+            Err(_) => return return_400("invalid parameter value for 'id'"),
+        };
+        Some(edit_id)
+    } else {
+        None
     };
 
     let db_conn = match db_connect().await {
@@ -612,51 +480,66 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
         .get().expect("CONFIG not set?!")
         .http.base_path;
     if request.method() == Method::GET {
-        // find entry
-        let found_rows_res = db_conn.query(
-            "
-                SELECT
-                    company, veh_number, type_code, veh_class,
-                    in_service_since, out_of_service_since, manufacturer, other_data
-                FROM
-                    bimdb.bims
-                WHERE
-                    id = $1
-            ",
-            &[&edit_id],
-        ).await;
-        let found_rows = match found_rows_res {
-            Ok(fr) => fr,
-            Err(e) => {
-                error!("failed to obtain existing vehicle {}: {}", edit_id, e);
-                return return_500();
-            },
-        };
-        if found_rows.len() == 0 {
-            return return_400("failed to find this vehicle");
-        }
+        let template = if let Some(edit_id) = edit_id_opt {
+            // find entry
+            let found_rows_res = db_conn.query(
+                "
+                    SELECT
+                        company, veh_number, type_code, veh_class,
+                        in_service_since, out_of_service_since, manufacturer, other_data
+                    FROM
+                        bimdb.bims
+                    WHERE
+                        id = $1
+                ",
+                &[&edit_id],
+            ).await;
+            let found_rows = match found_rows_res {
+                Ok(fr) => fr,
+                Err(e) => {
+                    error!("failed to obtain existing vehicle {}: {}", edit_id, e);
+                    return return_500();
+                },
+            };
+            if found_rows.len() == 0 {
+                return return_400("failed to find this vehicle");
+            }
 
-        let company: String = found_rows[0].get(0);
-        let veh_number: String = found_rows[0].get(1);
-        let type_code: String = found_rows[0].get(2);
-        let vehicle_class: String = found_rows[0].get(3);
-        let in_service_since: Option<String> = found_rows[0].get(4);
-        let out_of_service_since: Option<String> = found_rows[0].get(5);
-        let manufacturer: Option<String> = found_rows[0].get(6);
-        let other_data: serde_json::Value = found_rows[0].get(7);
-
-        let template = AddEditTemplate {
-            base_path: base_path.clone(),
-            edit_id: Some(edit_id),
-            company: Some(company),
-            veh_number: Some(veh_number),
-            type_code: Some(type_code),
-            veh_class: Some(vehicle_class),
-            in_service_since,
-            out_of_service_since,
-            manufacturer,
-            other_data: Some(serde_json::to_string_pretty(&other_data).expect("failed to stringify other data JSON")),
+            let company: String = found_rows[0].get(0);
+            let veh_number: String = found_rows[0].get(1);
+            let type_code: String = found_rows[0].get(2);
+            let vehicle_class: String = found_rows[0].get(3);
+            let in_service_since: Option<String> = found_rows[0].get(4);
+            let out_of_service_since: Option<String> = found_rows[0].get(5);
+            let manufacturer: Option<String> = found_rows[0].get(6);
+            let other_data: serde_json::Value = found_rows[0].get(7);
+            AddEditTemplate {
+                base_path: base_path.clone(),
+                edit_id: Some(edit_id),
+                company: Some(company),
+                veh_number: Some(veh_number),
+                type_code: Some(type_code),
+                veh_class: Some(vehicle_class),
+                in_service_since,
+                out_of_service_since,
+                manufacturer,
+                other_data: Some(serde_json::to_string_pretty(&other_data).expect("failed to stringify other data JSON")),
+            }
+        } else {
+            AddEditTemplate {
+                base_path: base_path.clone(),
+                edit_id: None,
+                company: None,
+                veh_number: None,
+                type_code: None,
+                veh_class: None,
+                in_service_since: None,
+                out_of_service_since: None,
+                manufacturer: None,
+                other_data: None,
+            }
         };
+
         let template_text = template.render()
             .expect("failed to render template");
         Response::builder()
@@ -732,38 +615,66 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
             },
         };
         if !other_data.is_object() {
-            return return_400("field 'other-data' ooes not contain a JSON object");
+            return return_400("field 'other-data' does not contain a JSON object");
         }
 
         let db_conn = match db_connect().await {
             Some(dbc) => dbc,
             None => return return_500(),
         };
-        let update_res = db_conn.execute(
-            "
-                UPDATE bimdb.bims
-                SET
-                    company = $1,
-                    veh_number = $2,
-                    type_code = $3,
-                    veh_class = $4,
-                    in_service_since = $5,
-                    out_of_service_since = $6,
-                    manufacturer = $7,
-                    other_data = $8
-                WHERE
-                    id = $9
-            ",
-            &[
-                &company, &vehicle_number, &type_code,
-                &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
-                &other_data,
-                &edit_id,
-            ],
-        ).await;
-        if let Err(e) = update_res {
-            error!("failed to update vehicle {}: {}", edit_id, e);
-            return return_500();
+        if let Some(edit_id) = edit_id_opt {
+            let update_res = db_conn.execute(
+                "
+                    UPDATE bimdb.bims
+                    SET
+                        company = $1,
+                        veh_number = $2,
+                        type_code = $3,
+                        veh_class = $4,
+                        in_service_since = $5,
+                        out_of_service_since = $6,
+                        manufacturer = $7,
+                        other_data = $8
+                    WHERE
+                        id = $9
+                ",
+                &[
+                    &company, &vehicle_number, &type_code,
+                    &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
+                    &other_data,
+                    &edit_id,
+                ],
+            ).await;
+            if let Err(e) = update_res {
+                error!("failed to update vehicle {}: {}", edit_id, e);
+                return return_500();
+            }
+        } else {
+            let insert_res = db_conn.execute(
+                "
+                    INSERT INTO bimdb.bims
+                        (
+                            id, company, veh_number, type_code,
+                            veh_class, in_service_since, out_of_service_since, manufacturer,
+                            other_data
+                        )
+                    VALUES
+                        (
+                            DEFAULT, $1, $2, $3,
+                            $4, $5, $6, $7,
+                            $8
+                        )
+                ",
+                &[
+                    &company, &vehicle_number, &type_code,
+                    &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
+                    &other_data,
+                ],
+            ).await;
+            if let Err(e) = insert_res {
+                error!("failed to insert vehicle: {}", e);
+                return return_500();
+            }
         }
 
         Response::builder()
@@ -868,8 +779,8 @@ async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Resp
         match path_parts[0].as_ref() {
             "json" => handle_export(remote_addr, request, ExportFormat::Json).await,
             "cbor" => handle_export(remote_addr, request, ExportFormat::Cbor).await,
-            "add" => handle_add(remote_addr, request).await,
-            "edit" => handle_edit(remote_addr, request).await,
+            "add" => handle_add_edit(remote_addr, request, false).await,
+            "edit" => handle_add_edit(remote_addr, request, true).await,
             "delete" => handle_delete(remote_addr, request).await,
             _ => return_404(),
         }
