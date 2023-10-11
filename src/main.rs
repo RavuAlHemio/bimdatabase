@@ -777,6 +777,62 @@ async fn handle_edit(_remote_addr: SocketAddr, request: Request<Body>) -> Respon
     }
 }
 
+#[instrument(skip_all)]
+async fn handle_delete(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+    let query_pairs = match get_query_pairs(request.uri().query()) {
+        Some(qp) => qp,
+        None => return return_400("invalid UTF-8 in query"),
+    };
+
+    if request.method() != Method::POST {
+        return return_405(request.method(), &[Method::POST]);
+    }
+
+    let delete_id_str_opt = query_pairs.iter()
+        .filter(|(k, _v)| k == "id")
+        .map(|(_k, v)| v)
+        .flatten()
+        .last();
+    let delete_id_str = match delete_id_str_opt {
+        Some(eis) => eis,
+        None => return return_400("missing parameter 'id'"),
+    };
+    let delete_id: i64 = match delete_id_str.parse() {
+        Ok(ei) => ei,
+        Err(_) => return return_400("invalid parameter value for 'id'"),
+    };
+
+    let db_conn = match db_connect().await {
+        Some(dbc) => dbc,
+        None => return return_500(),
+    };
+
+    // delete entry
+    let affected_rows_res = db_conn.execute(
+        "DELETE FROM bimdb.bims WHERE id = $1",
+        &[&delete_id],
+    ).await;
+    let affected_rows = match affected_rows_res {
+        Ok(fr) => fr,
+        Err(e) => {
+            error!("failed to obtain existing vehicle {}: {}", delete_id, e);
+            return return_500();
+        },
+    };
+    if affected_rows == 0 {
+        return return_400("failed to find this vehicle");
+    }
+
+    let base_path = &CONFIG.get().expect("CONFIG not set?!")
+        .http.base_path;
+    Response::builder()
+        .status(302)
+        .header("Location", base_path)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(Body::from("redirecting..."))
+        .unwrap_or_else(|_| return_500())
+}
+
 #[instrument(skip(request))]
 async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
     // get base path parts from config
@@ -814,6 +870,7 @@ async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Resp
             "cbor" => handle_export(remote_addr, request, ExportFormat::Cbor).await,
             "add" => handle_add(remote_addr, request).await,
             "edit" => handle_edit(remote_addr, request).await,
+            "delete" => handle_delete(remote_addr, request).await,
             _ => return_404(),
         }
     } else if path_parts.len() == 2 && path_parts[0] == "static" && STATIC_FILE_REGEX.is_match(path_parts[1].as_ref()) {
