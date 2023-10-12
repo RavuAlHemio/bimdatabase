@@ -283,7 +283,9 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Respo
     }
 
     // obtain vehicles
-    const PER_PAGE: i64 = 20;
+    let per_page = CONFIG
+        .get().expect("CONFIG not set?!")
+        .vehicles_per_page;
     let page_str = query_pairs.iter()
         .filter(|(k, _v)| k == "page")
         .map(|(_k, v)| v.as_ref().map(|v2| v2.as_str()))
@@ -309,7 +311,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Respo
                 company, veh_number, id
             LIMIT $1 OFFSET $2
         ",
-        &[&PER_PAGE, &(page*PER_PAGE)],
+        &[&per_page, &(page*per_page)],
     ).await;
     let vehicle_rows = match vehicle_rows_res {
         Ok(vr) => vr,

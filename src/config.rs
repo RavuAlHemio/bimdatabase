@@ -11,6 +11,10 @@ pub(crate) static CONFIG: OnceCell<Config> = OnceCell::new();
 pub struct Config {
     pub http: HttpConfig,
     pub db: DbConfig,
+    #[serde(default = "Config::default_vehicles_per_page")] pub vehicles_per_page: i64,
+}
+impl Config {
+    fn default_vehicles_per_page() -> i64 { 20 }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
