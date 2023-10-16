@@ -93,7 +93,10 @@ export module AddEdit {
         const plusButton = document.createElement("input");
         plusButton.type = "button";
         plusButton.value = "+";
-        plusButton.addEventListener("click", () => addOtherDataEntry(otherDataParent, newEntryContainer));
+        plusButton.addEventListener("click", () => {
+            const [keyInput, _valueInput] = addOtherDataEntry(otherDataParent, newEntryContainer);
+            keyInput.focus();
+        });
         newEntryContainer.appendChild(plusButton);
 
         otherDataTextArea.style.display = "none";

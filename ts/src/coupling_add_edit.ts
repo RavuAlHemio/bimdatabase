@@ -129,7 +129,10 @@ export module CouplingAddEdit {
         const plusButton = document.createElement("input");
         plusButton.type = "button";
         plusButton.value = "+";
-        plusButton.addEventListener("click", () => addVehicle(vehiclesParent, newEntryContainer));
+        plusButton.addEventListener("click", () => {
+            const newVehicleNumberInput = addVehicle(vehiclesParent, newEntryContainer);
+            newVehicleNumberInput.focus();
+        });
         newEntryContainer.appendChild(plusButton);
 
         vehiclesTextArea.style.display = "none";
