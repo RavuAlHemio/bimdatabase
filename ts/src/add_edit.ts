@@ -100,5 +100,11 @@ export module AddEdit {
         newEntryContainer.appendChild(plusButton);
 
         otherDataTextArea.style.display = "none";
+
+        // focus company field
+        const companyInput = <HTMLInputElement|null>document.getElementById("bimdb-ae-company");
+        if (companyInput !== null) {
+            companyInput.focus();
+        }
     }
 }

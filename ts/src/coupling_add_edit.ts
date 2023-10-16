@@ -136,5 +136,11 @@ export module CouplingAddEdit {
         newEntryContainer.appendChild(plusButton);
 
         vehiclesTextArea.style.display = "none";
+
+        // focus company field
+        const companySelect = <HTMLSelectElement|null>document.getElementById("bimdb-cae-company");
+        if (companySelect !== null) {
+            companySelect.focus();
+        }
     }
 }
