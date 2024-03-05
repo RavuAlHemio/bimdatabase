@@ -15,13 +15,17 @@ use std::process::ExitCode;
 use askama::Template;
 use ciborium::cbor;
 use form_urlencoded;
-use hyper::{Body, Method, Request, Response};
-use hyper::server::conn::AddrStream;
-use hyper::service::{make_service_fn, service_fn};
+use http_body_util::{BodyExt, Full};
+use hyper::{Method, Request, Response};
+use hyper::body::{Bytes, Incoming};
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder;
 use once_cell::sync::Lazy;
 use percent_encoding;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tokio::net::TcpListener;
 use toml;
 use tracing::{error, instrument, warn};
 use tracing_subscriber;
@@ -146,29 +150,29 @@ fn strip_path_prefix<'h, 'n, H: AsRef<str>, N: AsRef<str>>(haystack: &'h [H], ne
 }
 
 
-fn return_500() -> Response<Body> {
+fn return_500() -> Response<Full<Bytes>> {
     Response::builder()
         .status(500)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from("500 Internal Server Error"))
+        .body(Full::new(Bytes::from("500 Internal Server Error")))
         .expect("failed to construct HTTP 500 response")
 }
-fn return_400(reason: &str) -> Response<Body> {
+fn return_400(reason: &str) -> Response<Full<Bytes>> {
     let body_string = format!("400 Bad Request: {}", reason);
     Response::builder()
         .status(400)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from(body_string))
+        .body(Full::new(Bytes::from(body_string)))
         .unwrap_or_else(|_| return_500())
 }
-fn return_404() -> Response<Body> {
+fn return_404() -> Response<Full<Bytes>> {
     Response::builder()
         .status(400)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from("404 Not Found"))
+        .body(Full::new(Bytes::from("404 Not Found")))
         .unwrap_or_else(|_| return_500())
 }
-fn return_405(method: &Method, allowed_methods: &[Method]) -> Response<Body> {
+fn return_405(method: &Method, allowed_methods: &[Method]) -> Response<Full<Bytes>> {
     let allowed_methods: Vec<&str> = allowed_methods.iter().map(|m| m.as_str()).collect();
     let allowed_methods_string = allowed_methods.join(", ");
     let body_text = format!("unsupported method {}; allowed: {}", method, allowed_methods_string);
@@ -176,7 +180,7 @@ fn return_405(method: &Method, allowed_methods: &[Method]) -> Response<Body> {
         .status(405)
         .header("Content-Type", "text/plain; charset=utf-8")
         .header("Allow", &allowed_methods_string)
-        .body(Body::from(body_text))
+        .body(Full::new(Bytes::from(body_text)))
         .unwrap_or_else(|_| return_500())
 }
 
@@ -249,7 +253,7 @@ fn get_query_pairs(query: Option<&str>) -> Option<Vec<(String, Option<String>)>>
 
 
 #[instrument(skip_all)]
-async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> Response<Full<Bytes>> {
     if request.method() != Method::GET {
         return return_405(request.method(), &[Method::GET]);
     }
@@ -355,12 +359,12 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Body>) -> Respo
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(template_text))
+        .body(Full::new(Bytes::from(template_text)))
         .unwrap_or_else(|_| return_500())
 }
 
 #[instrument(skip_all)]
-async fn handle_export(_remote_addr: SocketAddr, request: Request<Body>, format: ExportFormat) -> Response<Body> {
+async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, format: ExportFormat) -> Response<Full<Bytes>> {
     if request.method() != Method::GET {
         return return_405(request.method(), &[Method::GET]);
     }
@@ -489,12 +493,12 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Body>, format:
     Response::builder()
         .status(200)
         .header("Content-Type", content_type)
-        .body(Body::from(data))
+        .body(Full::new(Bytes::from(data)))
         .unwrap_or_else(|_| return_500())
 }
 
 #[instrument(skip_all)]
-async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit: bool) -> Response<Body> {
+async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, edit: bool) -> Response<Full<Bytes>> {
     let query_pairs = match get_query_pairs(request.uri().query()) {
         Some(qp) => qp,
         None => return return_400("invalid UTF-8 in query"),
@@ -593,13 +597,12 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit:
         Response::builder()
             .status(200)
             .header("Content-Type", "text/html; charset=utf-8")
-            .body(Body::from(template_text))
+            .body(Full::new(Bytes::from(template_text)))
             .unwrap_or_else(|_| return_500())
     } else if request.method() == Method::POST {
         let (_request_head, request_body) = request.into_parts();
-        let request_bytes_res = hyper::body::to_bytes(request_body).await;
-        let request_bytes = match request_bytes_res {
-            Ok(rb) => rb,
+        let request_bytes = match request_body.collect().await {
+            Ok(rb) => rb.to_bytes(),
             Err(e) => {
                 error!("failed to read request bytes: {}", e);
                 return return_500();
@@ -726,7 +729,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit:
             .status(302)
             .header("Location", base_path_or_slash)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .body(Body::from("redirecting..."))
+            .body(Full::new(Bytes::from("redirecting...")))
             .unwrap_or_else(|_| return_500())
     } else {
         return_405(request.method(), &[Method::GET, Method::POST])
@@ -734,7 +737,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit:
 }
 
 #[instrument(skip_all)]
-async fn handle_delete(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_delete(_remote_addr: SocketAddr, request: Request<Incoming>) -> Response<Full<Bytes>> {
     let query_pairs = match get_query_pairs(request.uri().query()) {
         Some(qp) => qp,
         None => return return_400("invalid UTF-8 in query"),
@@ -786,11 +789,11 @@ async fn handle_delete(_remote_addr: SocketAddr, request: Request<Body>) -> Resp
         .status(302)
         .header("Location", base_path_or_slash)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from("redirecting..."))
+        .body(Full::new(Bytes::from("redirecting...")))
         .unwrap_or_else(|_| return_500())
 }
 
-async fn handle_couplings(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_couplings(_remote_addr: SocketAddr, request: Request<Incoming>) -> Response<Full<Bytes>> {
     if request.method() != Method::GET {
         return return_405(request.method(), &[Method::GET]);
     }
@@ -848,12 +851,12 @@ async fn handle_couplings(_remote_addr: SocketAddr, request: Request<Body>) -> R
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(template_text))
+        .body(Full::new(Bytes::from(template_text)))
         .unwrap_or_else(|_| return_500())
 }
 
 #[instrument(skip_all)]
-async fn handle_coupling_add_edit(_remote_addr: SocketAddr, request: Request<Body>, edit: bool) -> Response<Body> {
+async fn handle_coupling_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, edit: bool) -> Response<Full<Bytes>> {
     let query_pairs = match get_query_pairs(request.uri().query()) {
         Some(qp) => qp,
         None => return return_400("invalid UTF-8 in query"),
@@ -972,13 +975,12 @@ async fn handle_coupling_add_edit(_remote_addr: SocketAddr, request: Request<Bod
         Response::builder()
             .status(200)
             .header("Content-Type", "text/html; charset=utf-8")
-            .body(Body::from(template_text))
+            .body(Full::new(Bytes::from(template_text)))
             .unwrap_or_else(|_| return_500())
     } else if request.method() == Method::POST {
         let (_request_head, request_body) = request.into_parts();
-        let request_bytes_res = hyper::body::to_bytes(request_body).await;
-        let request_bytes = match request_bytes_res {
-            Ok(rb) => rb,
+        let request_bytes = match request_body.collect().await {
+            Ok(rb) => rb.to_bytes(),
             Err(e) => {
                 error!("failed to read request bytes: {}", e);
                 return return_500();
@@ -1100,7 +1102,7 @@ async fn handle_coupling_add_edit(_remote_addr: SocketAddr, request: Request<Bod
             .status(302)
             .header("Location", &redirect_path)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .body(Body::from("redirecting..."))
+            .body(Full::new(Bytes::from("redirecting...")))
             .unwrap_or_else(|_| return_500())
     } else {
         return_405(request.method(), &[Method::GET, Method::POST])
@@ -1108,7 +1110,7 @@ async fn handle_coupling_add_edit(_remote_addr: SocketAddr, request: Request<Bod
 }
 
 #[instrument(skip_all)]
-async fn handle_coupling_delete(_remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_coupling_delete(_remote_addr: SocketAddr, request: Request<Incoming>) -> Response<Full<Bytes>> {
     let query_pairs = match get_query_pairs(request.uri().query()) {
         Some(qp) => qp,
         None => return return_400("invalid UTF-8 in query"),
@@ -1182,12 +1184,12 @@ async fn handle_coupling_delete(_remote_addr: SocketAddr, request: Request<Body>
         .status(302)
         .header("Location", &redirect_path)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .body(Body::from("redirecting..."))
+        .body(Full::new(Bytes::from("redirecting...")))
         .unwrap_or_else(|_| return_500())
 }
 
 #[instrument(skip(request))]
-async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Response<Body> {
+async fn handle_request(remote_addr: SocketAddr, request: Request<Incoming>) -> Response<Full<Bytes>> {
     // get base path parts from config
     let base_path = &CONFIG
         .get().expect("CONFIG not set?!")
@@ -1267,7 +1269,7 @@ async fn handle_request(remote_addr: SocketAddr, request: Request<Body>) -> Resp
         Response::builder()
             .status(200)
             .header("Content-Type", content_type)
-            .body(Body::from(contents))
+            .body(Full::new(Bytes::from(contents)))
             .unwrap_or_else(|_| return_500())
     } else {
         return_404()
@@ -1308,24 +1310,25 @@ async fn main() -> ExitCode {
     let config = CONFIG.get()
         .expect("CONFIG not set?!");
 
-    // start up server
-    let make_service = make_service_fn(|socket: &AddrStream| {
-        let remote_addr = socket.remote_addr();
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
-                Ok::<_, Infallible>(
-                    handle_request(remote_addr, req).await
-                )
-            }))
-        }
-    });
+    // listen to TCP
+    let listener = TcpListener::bind(config.http.listen_socket_addr).await
+        .expect("failed to open listening socket");
 
-    // serve!
-    let server = hyper::Server::bind(&config.http.listen_socket_addr)
-        .serve(make_service);
-    if let Err(e) = server.await {
-        error!("server error: {}", e);
+    loop {
+        let (stream, remote_addr) = listener.accept().await
+            .expect("failed to accept incoming connection");
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            let serve_result = Builder::new(TokioExecutor::new())
+                .http1()
+                .http2()
+                .serve_connection(io, service_fn(move |req| async move {
+                    Ok::<_, Infallible>(handle_request(remote_addr, req).await)
+                }))
+                .await;
+            if let Err(serve_error) = serve_result {
+                error!("error serving request from {}: {}", remote_addr, serve_error);
+            }
+        });
     }
-
-    ExitCode::SUCCESS
 }
