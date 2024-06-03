@@ -55,10 +55,10 @@
 
 <p class="pagination-links">
 {% if page > 0 %}
-  <a href="{{ base_path }}/?page={{ page - 1 }}" title="previous page">&#11013;&#65039;</a>
+  <a href="{{ base_path }}/?page={{ page - 1 }}{% if company.len() > 0 %}&amp;company={{ company|urlencode_strict }}{% endif %}" title="previous page">&#11013;&#65039;</a>
 {% endif %}
 {% if vehicles.len() > 0 %}
-  <a href="{{ base_path }}/?page={{ page + 1 }}" title="next page">&#10145;&#65039;</a>
+  <a href="{{ base_path }}/?page={{ page + 1 }}{% if company.len() > 0 %}&amp;company={{ company|urlencode_strict }}{% endif %}" title="next page">&#10145;&#65039;</a>
 {% endif %}
 </p>
 

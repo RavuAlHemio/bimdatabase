@@ -26,6 +26,7 @@ use percent_encoding;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio_postgres::types::ToSql;
 use toml;
 use tracing::{error, instrument, warn};
 use tracing_subscriber;
@@ -75,6 +76,7 @@ struct IndexTemplate {
     pub vehicles: Vec<BimPart>,
     pub base_path: String,
     pub page: i64,
+    pub company: String,
 }
 
 #[derive(Template)]
@@ -296,6 +298,12 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
         .flatten()
         .last()
         .unwrap_or("0");
+    let company_str = query_pairs.iter()
+        .filter(|(k, _v)| k == "company")
+        .map(|(_k, v)| v.as_ref().map(|v2| v2.as_str().trim()))
+        .flatten()
+        .last()
+        .unwrap_or("");
     let page: i64 = match page_str.parse() {
         Ok(pn) => if pn < 0 {
             return return_400(&format!("'page' must be >= 0"));
@@ -304,20 +312,28 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
         },
         Err(_) => return return_400("invalid 'page'"),
     };
-    let vehicle_rows_res = db_conn.query(
+    let page_offset = page * per_page;
+    let mut query_params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(3);
+    query_params.push(&per_page);
+    query_params.push(&page_offset);
+    let query = format!(
         "
             SELECT
                 id, company, veh_number, type_code,
                 veh_class, in_service_since, out_of_service_since, manufacturer
             FROM
                 bimdb.bims
+            {}
             ORDER BY
                 company, veh_number, id
             LIMIT $1 OFFSET $2
         ",
-        &[&per_page, &(page*per_page)],
-    ).await;
-    let vehicle_rows = match vehicle_rows_res {
+        if company_str.len() > 0 { "WHERE company = $3" } else { "" },
+    );
+    if company_str.len() > 0 {
+        query_params.push(&company_str);
+    }
+    let vehicle_rows = match db_conn.query(&query, &query_params).await {
         Ok(vr) => vr,
         Err(e) => {
             error!("failed to obtain vehicle rows: {}", e);
@@ -353,6 +369,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
         vehicles,
         base_path: config.http.base_path.clone(),
         page,
+        company: company_str.to_owned(),
     };
     let template_text = template.render()
         .expect("failed to render template");
