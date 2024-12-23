@@ -7,8 +7,8 @@
   },
   "source": "./src/bimdatabase.ts",
   "devDependencies": {
-    "@parcel/core": "^2.12.0",
-    "parcel": "^2.12.0"
+    "@parcel/core": "^2.13.3",
+    "parcel": "^2.13.3"
   },
   "packageManager": "yarn@3.6.4"
 }
