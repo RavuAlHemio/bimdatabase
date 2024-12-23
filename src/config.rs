@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
+use std::sync::OnceLock;
 
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 
-pub(crate) static CONFIG: OnceCell<Config> = OnceCell::new();
+pub(crate) static CONFIG: OnceLock<Config> = OnceLock::new();
 
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

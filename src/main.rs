@@ -11,6 +11,7 @@ use std::io::Read;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::LazyLock;
 
 use askama::Template;
 use ciborium::cbor;
@@ -21,7 +22,6 @@ use hyper::body::{Bytes, Incoming};
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
-use once_cell::sync::Lazy;
 use percent_encoding;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ use tracing_subscriber;
 use crate::config::{CONFIG, Config};
 
 
-static STATIC_FILE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(concat!(
+static STATIC_FILE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(concat!(
     "^",
     "[A-Za-z0-9_-]+",
     "(?:",
