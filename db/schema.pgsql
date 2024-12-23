@@ -12,6 +12,7 @@ CREATE TABLE bimdb.bims
 , in_service_since character varying(32) NULL DEFAULT NULL
 , out_of_service_since character varying(32) NULL DEFAULT NULL
 , manufacturer character varying(32) NULL DEFAULT NULL
+, depot character varying(256) NULL DEFAULT NULL
 , other_data jsonb NOT NULL
 , CONSTRAINT pkey_bims PRIMARY KEY (id)
 , CONSTRAINT uq_bims_company_vehnum UNIQUE (company, veh_number)
@@ -23,6 +24,7 @@ CREATE TABLE bimdb.bims
   AND   (in_service_since IS NULL OR length(in_service_since) > 0)
   AND   (out_of_service_since IS NULL OR length(out_of_service_since) > 0)
   AND   (manufacturer IS NULL OR length(manufacturer) > 0)
+  AND   (depot IS NULL OR length(depot) > 0)
   )
 );
 CREATE INDEX idx_bims_comp_veh_id ON bimdb.bims (company, veh_number, id);
@@ -75,4 +77,4 @@ CREATE TRIGGER trigger_check_coupling_bims BEFORE INSERT OR UPDATE ON bimdb.coup
 CREATE TABLE bimdb.schema_version
 ( schema_version bigint NOT NULL
 );
-INSERT INTO bimdb.schema_version (schema_version) VALUES (2);
+INSERT INTO bimdb.schema_version (schema_version) VALUES (3);

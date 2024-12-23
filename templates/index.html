@@ -37,6 +37,7 @@
     <th class="in-service-since">In Service Since</th>
     <th class="out-of-service-since">Out of Service Since</th>
     <th class="manufacturer">Manufacturer</th>
+    <th class="depot">Depot</th>
     <th class="tools">Tools</th>
   </tr>
   {% for vehicle in vehicles %}
@@ -48,6 +49,7 @@
       <td class="in-service-since{% if vehicle.in_service_since.is_none() %} null{% endif %}">{% if let Some(iss) = vehicle.in_service_since %}{{ iss }}{% endif %}</td>
       <td class="out-of-service-since{% if vehicle.out_of_service_since.is_none() %} null{% endif %}">{% if let Some(ooss) = vehicle.out_of_service_since %}{{ ooss }}{% endif %}</td>
       <td class="manufacturer{% if vehicle.manufacturer.is_none() %} null{% endif %}">{% if let Some(manuf) = vehicle.manufacturer %}{{ manuf }}{% endif %}</td>
+      <td class="depot{% if vehicle.depot.is_none() %} null{% endif %}">{% if let Some(dep) = vehicle.depot %}{{ dep }}{% endif %}</td>
       <td class="tools"><a href="{{ base_path }}/edit?id={{ vehicle.id }}" title="edit">&#9999;&#65039;</a></td>
     </tr>
   {% endfor %}

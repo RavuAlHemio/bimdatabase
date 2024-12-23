@@ -55,6 +55,7 @@ struct BimPart {
     pub in_service_since: Option<String>,
     pub out_of_service_since: Option<String>,
     pub manufacturer: Option<String>,
+    pub depot: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -91,6 +92,7 @@ struct AddEditTemplate {
     pub in_service_since: Option<String>,
     pub out_of_service_since: Option<String>,
     pub manufacturer: Option<String>,
+    pub depot: Option<String>,
     pub other_data: Option<String>,
 }
 
@@ -320,7 +322,8 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
         "
             SELECT
                 id, company, veh_number, type_code,
-                veh_class, in_service_since, out_of_service_since, manufacturer
+                veh_class, in_service_since, out_of_service_since, manufacturer,
+                depot
             FROM
                 bimdb.bims
             {}
@@ -351,6 +354,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
         let in_service_since: Option<String> = row.get(5);
         let out_of_service_since: Option<String> = row.get(6);
         let manufacturer: Option<String> = row.get(7);
+        let depot: Option<String> = row.get(8);
         vehicles.push(BimPart {
             id,
             company,
@@ -360,6 +364,7 @@ async fn handle_index(_remote_addr: SocketAddr, request: Request<Incoming>) -> R
             in_service_since,
             out_of_service_since,
             manufacturer,
+            depot,
         })
     }
 
@@ -411,7 +416,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
         "
         SELECT
             b.veh_number, b.type_code, b.veh_class, b.in_service_since,
-            b.out_of_service_since, b.manufacturer, b.other_data,
+            b.out_of_service_since, b.manufacturer, b.depot, b.other_data,
             COALESCE(JSONB_AGG(cb.veh_number ORDER BY cpl2bim.position) FILTER (WHERE cb.veh_number IS NOT NULL), JSONB_BUILD_ARRAY()) fixed_coupling
         FROM
             bimdb.bims b
@@ -421,8 +426,9 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
         WHERE
             b.company = $1
         GROUP BY
-            b.id, b.veh_number, b.type_code, b.veh_class,
-            b.in_service_since, b.out_of_service_since, b.manufacturer, b.other_data
+            b.id,
+            b.veh_number, b.type_code, b.veh_class, b.in_service_since,
+            b.out_of_service_since, b.manufacturer, b.depot, b.other_data
         ORDER BY
             b.veh_number, b.id
         ",
@@ -446,8 +452,9 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                 let in_service_since: Option<String> = row.get(3);
                 let out_of_service_since: Option<String> = row.get(4);
                 let manufacturer: Option<String> = row.get(5);
-                let other_data: serde_json::Value = row.get(6);
-                let fixed_coupling: serde_json::Value = row.get(7);
+                let depot: Option<String> = row.get(6);
+                let other_data: serde_json::Value = row.get(7);
+                let fixed_coupling: serde_json::Value = row.get(8);
                 vehicles.push(serde_json::json!({
                     "number": veh_number,
                     "vehicle_class": veh_class,
@@ -455,6 +462,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                     "in_service_since": in_service_since,
                     "out_of_service_since": out_of_service_since,
                     "manufacturer": manufacturer,
+                    "depot": depot,
                     "other_data": other_data,
                     "fixed_coupling": fixed_coupling,
                 }));
@@ -477,8 +485,9 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                 let in_service_since: Option<String> = row.get(3);
                 let out_of_service_since: Option<String> = row.get(4);
                 let manufacturer: Option<String> = row.get(5);
-                let other_data: serde_json::Value = row.get(6);
-                let fixed_coupling: serde_json::Value = row.get(7);
+                let depot: Option<String> = row.get(6);
+                let other_data: serde_json::Value = row.get(7);
+                let fixed_coupling: serde_json::Value = row.get(8);
                 let cbor_value_res = cbor!({
                     "number" => veh_number,
                     "vehicle_class" => veh_class,
@@ -486,6 +495,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                     "in_service_since" => in_service_since,
                     "out_of_service_since" => out_of_service_since,
                     "manufacturer" => manufacturer,
+                    "depot" => depot,
                     "other_data" => other_data,
                     "fixed_coupling" => fixed_coupling,
                 });
@@ -555,7 +565,8 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 "
                     SELECT
                         company, veh_number, type_code, veh_class,
-                        in_service_since, out_of_service_since, manufacturer, other_data
+                        in_service_since, out_of_service_since, manufacturer, depot,
+                        other_data
                     FROM
                         bimdb.bims
                     WHERE
@@ -581,7 +592,8 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             let in_service_since: Option<String> = found_rows[0].get(4);
             let out_of_service_since: Option<String> = found_rows[0].get(5);
             let manufacturer: Option<String> = found_rows[0].get(6);
-            let other_data: serde_json::Value = found_rows[0].get(7);
+            let depot: Option<String> = found_rows[0].get(7);
+            let other_data: serde_json::Value = found_rows[0].get(8);
             AddEditTemplate {
                 base_path: base_path.clone(),
                 edit_id: Some(edit_id),
@@ -592,6 +604,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 in_service_since,
                 out_of_service_since,
                 manufacturer,
+                depot,
                 other_data: Some(serde_json::to_string_pretty(&other_data).expect("failed to stringify other data JSON")),
             }
         } else {
@@ -605,6 +618,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 in_service_since: None,
                 out_of_service_since: None,
                 manufacturer: None,
+                depot: None,
                 other_data: None,
             }
         };
@@ -667,6 +681,8 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
         let manufacturer = form_values.get("manufacturer")
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
+        let depot = form_values.get("depot")
+            .and_then(|c| if c.len() == 0 { None } else { Some(c) });
         let other_data_string = match form_values.get("other-data") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'other-data' must not be empty");
@@ -698,13 +714,14 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                         in_service_since = $5,
                         out_of_service_since = $6,
                         manufacturer = $7,
-                        other_data = $8
+                        depot = $8,
+                        other_data = $9
                     WHERE
-                        id = $9
+                        id = $10
                 ",
                 &[
-                    &company, &vehicle_number, &type_code,
-                    &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
+                    &company, &vehicle_number, &type_code, &vehicle_class,
+                    &in_service_since, &out_of_service_since, &manufacturer, &depot,
                     &other_data,
                     &edit_id,
                 ],
@@ -718,20 +735,22 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 "
                     INSERT INTO bimdb.bims
                         (
-                            id, company, veh_number, type_code,
-                            veh_class, in_service_since, out_of_service_since, manufacturer,
+                            id,
+                            company, veh_number, type_code, veh_class,
+                            in_service_since, out_of_service_since, manufacturer, depot,
                             other_data
                         )
                     VALUES
                         (
-                            DEFAULT, $1, $2, $3,
-                            $4, $5, $6, $7,
-                            $8
+                            DEFAULT,
+                            $1, $2, $3, $4,
+                            $5, $6, $7, $8,
+                            $9
                         )
                 ",
                 &[
-                    &company, &vehicle_number, &type_code,
-                    &vehicle_class, &in_service_since, &out_of_service_since, &manufacturer,
+                    &company, &vehicle_number, &type_code, &vehicle_class,
+                    &in_service_since, &out_of_service_since, &manufacturer, &depot,
                     &other_data,
                 ],
             ).await;

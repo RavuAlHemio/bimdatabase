@@ -82,6 +82,14 @@
     </tr>
     <tr>
       <td>
+        <label for="bimdb-ae-depot">Depot:</label>
+      </td>
+      <td>
+        <input type="text" id="bimdb-ae-depot" name="depot" minlength="1" maxlength="256"{% if let Some(value) = depot %} value="{{ value }}"{% endif %} />
+      </td>
+    </tr>
+    <tr>
+      <td>
         <label for="bimdb-ae-other-data">Other data:</label>
       </td>
       <td>
