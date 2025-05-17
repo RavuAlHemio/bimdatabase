@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::OnceLock;
 
@@ -12,6 +13,7 @@ pub struct Config {
     pub http: HttpConfig,
     pub db: DbConfig,
     #[serde(default = "Config::default_vehicles_per_page")] pub vehicles_per_page: i64,
+    #[serde(default)] pub value_sets: ValueSetConfig,
 }
 impl Config {
     fn default_vehicles_per_page() -> i64 { 20 }
@@ -34,4 +36,10 @@ pub struct DbConfig {
 }
 impl DbConfig {
     fn default_port() -> u16 { 5432 }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ValueSetConfig {
+    #[serde(default)] pub vehicle_types: BTreeSet<String>,
+    #[serde(default)] pub power_sources: BTreeSet<String>,
 }
