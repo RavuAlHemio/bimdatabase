@@ -78,7 +78,7 @@ CREATE TABLE bimdb.power_sources
 ( bim_id bigint NOT NULL
 , power_source character varying(256) NOT NULL
 , CONSTRAINT pkey_power_sources PRIMARY KEY (bim_id, power_source)
-, CONSTRAINT fk_power_sources_bim_id FOREIGN KEY (bim_id) REFERENCES bimdb.bims (id)
+, CONSTRAINT fk_power_sources_bim_id FOREIGN KEY (bim_id) REFERENCES bimdb.bims (id) ON DELETE CASCADE
 , CONSTRAINT ck_power_sources_no_empty_str CHECK
   (     length(power_source) > 0
   )
@@ -87,4 +87,4 @@ CREATE TABLE bimdb.power_sources
 CREATE TABLE bimdb.schema_version
 ( schema_version bigint NOT NULL
 );
-INSERT INTO bimdb.schema_version (schema_version) VALUES (4);
+INSERT INTO bimdb.schema_version (schema_version) VALUES (5);
