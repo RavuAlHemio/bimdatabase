@@ -416,24 +416,87 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
         None => return return_500(),
     };
 
+    // obtain fixed couplings
+    let mut bim_id_to_coupling: BTreeMap<i64, Vec<String>> = BTreeMap::new();
+    let coupling_rows_res = db_conn.query(
+        "
+            SELECT
+                b.id, coupled.veh_number
+            FROM
+                bimdb.bims b
+                INNER JOIN bimdb.coupling_bims bim2cpl
+                    ON bim2cpl.bim_id = b.id
+                INNER JOIN bimdb.coupling_bims cpl2bim
+                    ON cpl2bim.coupling_id = bim2cpl.coupling_id
+                INNER JOIN bimdb.bims coupled
+                    ON coupled.id = cpl2bim.bim_id
+            WHERE
+                b.company = $1
+            ORDER BY
+                b.id, cpl2bim.position
+        ",
+        &[&company],
+    ).await;
+    let coupling_rows = match coupling_rows_res {
+        Ok(cr) => cr,
+        Err(e) => {
+            error!("failed to obtain coupling rows for company {:?}: {}", e, company);
+            return return_500();
+        },
+    };
+    for coupling_row in coupling_rows {
+        let bim_id: i64 = coupling_row.get(0);
+        let coupled_number: String = coupling_row.get(1);
+        bim_id_to_coupling
+            .entry(bim_id)
+            .or_insert_with(|| Vec::new())
+            .push(coupled_number);
+    }
+
+    // obtain power sources
+    let mut bim_id_to_power_sources: BTreeMap<i64, BTreeSet<String>> = BTreeMap::new();
+    let power_source_rows_res = db_conn.query(
+        "
+            SELECT
+                b.id, ps.power_source
+            FROM
+                bimdb.bims b
+                INNER JOIN bimdb.power_sources ps
+                    ON ps.bim_id = b.id
+            WHERE
+                b.company = $1
+            ORDER BY
+                b.id, ps.power_source
+        ",
+        &[&company],
+    ).await;
+    let power_source_rows = match power_source_rows_res {
+        Ok(psr) => psr,
+        Err(e) => {
+            error!("failed to obtain power source rows for company {:?}: {}", e, company);
+            return return_500();
+        },
+    };
+    for power_source_row in power_source_rows {
+        let bim_id: i64 = power_source_row.get(0);
+        let power_source: String = power_source_row.get(1);
+        bim_id_to_power_sources
+            .entry(bim_id)
+            .or_insert_with(|| BTreeSet::new())
+            .insert(power_source);
+    }
+
     // obtain vehicles
     let vehicle_rows_res = db_conn.query(
         "
         SELECT
-            b.veh_number, b.type_code, b.veh_class, b.in_service_since,
-            b.out_of_service_since, b.manufacturer, b.depot, b.other_data,
-            COALESCE(JSONB_AGG(cb.veh_number ORDER BY cpl2bim.position) FILTER (WHERE cb.veh_number IS NOT NULL), JSONB_BUILD_ARRAY()) fixed_coupling
+            b.id, b.veh_number, b.type_code, b.veh_class,
+            b.in_service_since, b.out_of_service_since, b.manufacturer, b.depot
+            b.other_data
         FROM
             bimdb.bims b
-            LEFT OUTER JOIN bimdb.coupling_bims bim2cpl ON bim2cpl.bim_id = b.id
-            LEFT OUTER JOIN bimdb.coupling_bims cpl2bim ON cpl2bim.coupling_id = bim2cpl.coupling_id
-            LEFT OUTER JOIN bimdb.bims cb ON cb.id = cpl2bim.bim_id
         WHERE
             b.company = $1
-        GROUP BY
-            b.id,
-            b.veh_number, b.type_code, b.veh_class, b.in_service_since,
-            b.out_of_service_since, b.manufacturer, b.depot, b.other_data
         ORDER BY
             b.veh_number, b.id
         ",
@@ -450,16 +513,24 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
     let (data, content_type) = match format {
         ExportFormat::Json => {
             let mut vehicles = Vec::new();
+            let empty_coupling = Vec::with_capacity(0);
+            let no_power_sources = BTreeSet::new();
             for row in vehicle_rows {
-                let veh_number: String = row.get(0);
-                let type_code: String = row.get(1);
-                let veh_class: String = row.get(2);
-                let in_service_since: Option<String> = row.get(3);
-                let out_of_service_since: Option<String> = row.get(4);
-                let manufacturer: Option<String> = row.get(5);
-                let depot: Option<String> = row.get(6);
-                let other_data: serde_json::Value = row.get(7);
-                let fixed_coupling: serde_json::Value = row.get(8);
+                let bim_id: i64 = row.get(0);
+                let veh_number: String = row.get(1);
+                let type_code: String = row.get(2);
+                let veh_class: String = row.get(3);
+                let in_service_since: Option<String> = row.get(4);
+                let out_of_service_since: Option<String> = row.get(5);
+                let manufacturer: Option<String> = row.get(6);
+                let depot: Option<String> = row.get(7);
+                let other_data: serde_json::Value = row.get(8);
+
+                let fixed_coupling = bim_id_to_coupling.get(&bim_id)
+                    .unwrap_or(&empty_coupling);
+                let power_sources = bim_id_to_power_sources.get(&bim_id)
+                    .unwrap_or(&no_power_sources);
+
                 vehicles.push(serde_json::json!({
                     "number": veh_number,
                     "vehicle_class": veh_class,
@@ -470,6 +541,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                     "depot": depot,
                     "other_data": other_data,
                     "fixed_coupling": fixed_coupling,
+                    "power_sources": power_sources,
                 }));
             }
             let json_data = match serde_json::to_string_pretty(&vehicles) {
@@ -483,16 +555,24 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
         },
         ExportFormat::Cbor => {
             let mut vehicles = Vec::new();
+            let empty_coupling = Vec::with_capacity(0);
+            let no_power_sources = BTreeSet::new();
             for row in vehicle_rows {
-                let veh_number: String = row.get(0);
-                let type_code: String = row.get(1);
-                let veh_class: String = row.get(2);
-                let in_service_since: Option<String> = row.get(3);
-                let out_of_service_since: Option<String> = row.get(4);
-                let manufacturer: Option<String> = row.get(5);
-                let depot: Option<String> = row.get(6);
-                let other_data: serde_json::Value = row.get(7);
-                let fixed_coupling: serde_json::Value = row.get(8);
+                let bim_id: i64 = row.get(0);
+                let veh_number: String = row.get(1);
+                let type_code: String = row.get(2);
+                let veh_class: String = row.get(3);
+                let in_service_since: Option<String> = row.get(4);
+                let out_of_service_since: Option<String> = row.get(5);
+                let manufacturer: Option<String> = row.get(6);
+                let depot: Option<String> = row.get(7);
+                let other_data: serde_json::Value = row.get(8);
+
+                let fixed_coupling = bim_id_to_coupling.get(&bim_id)
+                    .unwrap_or(&empty_coupling);
+                let power_sources = bim_id_to_power_sources.get(&bim_id)
+                    .unwrap_or(&no_power_sources);
+
                 let cbor_value_res = cbor!({
                     "number" => veh_number,
                     "vehicle_class" => veh_class,
@@ -503,6 +583,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
                     "depot" => depot,
                     "other_data" => other_data,
                     "fixed_coupling" => fixed_coupling,
+                    "power_sources" => power_sources,
                 });
                 let cbor_value = match cbor_value_res {
                     Ok(v) => v,
