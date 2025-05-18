@@ -1,5 +1,6 @@
 mod config;
 mod filters;
+mod value_multiset;
 
 
 use std::borrow::Cow;
@@ -32,6 +33,7 @@ use tracing::{error, instrument, warn};
 use tracing_subscriber;
 
 use crate::config::{CONFIG, Config};
+use crate::value_multiset::ValueMultiset;
 
 
 static STATIC_FILE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(concat!(
@@ -89,11 +91,14 @@ struct AddEditTemplate {
     pub veh_number: Option<String>,
     pub type_code: Option<String>,
     pub veh_class: Option<String>,
+    pub power_sources: BTreeSet<String>,
     pub in_service_since: Option<String>,
     pub out_of_service_since: Option<String>,
     pub manufacturer: Option<String>,
     pub depot: Option<String>,
     pub other_data: Option<String>,
+    pub allowed_veh_classes: BTreeSet<String>,
+    pub allowed_power_sources: BTreeSet<String>,
 }
 
 #[derive(Template)]
@@ -550,14 +555,20 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
         None
     };
 
-    let db_conn = match db_connect().await {
+    let mut db_conn = match db_connect().await {
         Some(dbc) => dbc,
         None => return return_500(),
     };
 
-    let base_path = &CONFIG
-        .get().expect("CONFIG not set?!")
-        .http.base_path;
+    let (base_path, allowed_veh_classes, allowed_power_sources)= {
+        let config = CONFIG
+            .get().expect("CONFIG not set?!");
+        (
+            &config.http.base_path,
+            config.value_sets.vehicle_classes.clone(),
+            config.value_sets.power_sources.clone(),
+        )
+    };
     if request.method() == Method::GET {
         let template = if let Some(edit_id) = edit_id_opt {
             // find entry
@@ -594,6 +605,31 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             let manufacturer: Option<String> = found_rows[0].get(6);
             let depot: Option<String> = found_rows[0].get(7);
             let other_data: serde_json::Value = found_rows[0].get(8);
+
+            let power_source_rows_res = db_conn.query(
+                "
+                    SELECT
+                        power_source
+                    FROM
+                        bimdb.power_sources
+                    WHERE
+                        bim_id = $1
+                ",
+                &[&edit_id],
+            ).await;
+            let power_source_rows = match power_source_rows_res {
+                Ok(fr) => fr,
+                Err(e) => {
+                    error!("failed to obtain power sources for existing vehicle {}: {}", edit_id, e);
+                    return return_500();
+                },
+            };
+            let mut power_sources = BTreeSet::new();
+            for row in power_source_rows {
+                let power_source: String = row.get(0);
+                power_sources.insert(power_source);
+            }
+
             AddEditTemplate {
                 base_path: base_path.clone(),
                 edit_id: Some(edit_id),
@@ -601,11 +637,14 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 veh_number: Some(veh_number),
                 type_code: Some(type_code),
                 veh_class: Some(vehicle_class),
+                power_sources,
                 in_service_since,
                 out_of_service_since,
                 manufacturer,
                 depot,
                 other_data: Some(serde_json::to_string_pretty(&other_data).expect("failed to stringify other data JSON")),
+                allowed_veh_classes,
+                allowed_power_sources,
             }
         } else {
             AddEditTemplate {
@@ -615,11 +654,14 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 veh_number: None,
                 type_code: None,
                 veh_class: None,
+                power_sources: BTreeSet::new(),
                 in_service_since: None,
                 out_of_service_since: None,
                 manufacturer: None,
                 depot: None,
                 other_data: None,
+                allowed_veh_classes,
+                allowed_power_sources,
             }
         };
 
@@ -640,10 +682,10 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             },
         };
 
-        let form_values: HashMap<Cow<str>, Cow<str>> = form_urlencoded::parse(&request_bytes)
+        let form_values: ValueMultiset<Cow<str>, Cow<str>> = form_urlencoded::parse(&request_bytes)
             .collect();
 
-        let company = match form_values.get("company") {
+        let company = match form_values.get_last("company") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'company' must not be empty");
             } else {
@@ -651,7 +693,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             },
             None => return return_400("field 'company' is required"),
         };
-        let vehicle_number = match form_values.get("veh-number") {
+        let vehicle_number = match form_values.get_last("veh-number") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'veh-number' must not be empty");
             } else {
@@ -659,7 +701,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             },
             None => return return_400("field 'veh-number' is required"),
         };
-        let type_code = match form_values.get("type-code") {
+        let type_code = match form_values.get_last("type-code") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'type-code' must not be empty");
             } else {
@@ -667,7 +709,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             },
             None => return return_400("field 'type-code' is required"),
         };
-        let vehicle_class = match form_values.get("veh-class") {
+        let vehicle_class = match form_values.get_last("veh-class") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'veh-class' must not be empty");
             } else {
@@ -675,15 +717,25 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             },
             None => return return_400("field 'veh-class' is required"),
         };
-        let in_service_since = form_values.get("in-service-since")
+        let mut power_sources = BTreeSet::new();
+        for power_source_value in form_values.get_list_or_empty("power-source") {
+            for line in power_source_value.split("\n") {
+                let trimmed_line = line.trim();
+                if trimmed_line.len() == 0 {
+                    continue;
+                }
+                power_sources.insert(trimmed_line.to_owned());
+            }
+        }
+        let in_service_since = form_values.get_last("in-service-since")
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let out_of_service_since = form_values.get("out-of-service-since")
+        let out_of_service_since = form_values.get_last("out-of-service-since")
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let manufacturer = form_values.get("manufacturer")
+        let manufacturer = form_values.get_last("manufacturer")
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let depot = form_values.get("depot")
+        let depot = form_values.get_last("depot")
             .and_then(|c| if c.len() == 0 { None } else { Some(c) });
-        let other_data_string = match form_values.get("other-data") {
+        let other_data_string = match form_values.get_last("other-data") {
             Some(c) => if c.len() == 0 {
                 return return_400("field 'other-data' must not be empty");
             } else {
@@ -702,8 +754,34 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
             return return_400("field 'other-data' does not contain a JSON object");
         }
 
-        if let Some(edit_id) = edit_id_opt {
-            let update_res = db_conn.execute(
+        let value_sets = {
+            let config = CONFIG
+                .get().expect("CONFIG not set?!");
+            &config.value_sets
+        };
+        if value_sets.vehicle_classes.len() > 0 {
+            if !value_sets.vehicle_classes.contains(vehicle_class.as_ref()) {
+                return return_400("field 'veh-class' is not one of the allowed values");
+            }
+        }
+        if value_sets.power_sources.len() > 0 {
+            for power_source in &power_sources {
+                if !value_sets.power_sources.contains(power_source) {
+                    return return_400("one of the 'power-source' values is not one of the allowed values");
+                }
+            }
+        }
+
+        let transact = match db_conn.transaction().await {
+            Ok(t) => t,
+            Err(e) => {
+                error!("failed to begin database transaction: {}", e);
+                return return_500();
+            },
+        };
+
+        let bim_id = if let Some(edit_id) = edit_id_opt {
+            let update_res = transact.execute(
                 "
                     UPDATE bimdb.bims
                     SET
@@ -730,8 +808,9 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                 error!("failed to update vehicle {}: {}", edit_id, e);
                 return return_500();
             }
+            edit_id
         } else {
-            let insert_res = db_conn.execute(
+            let insert_res = transact.query_one(
                 "
                     INSERT INTO bimdb.bims
                         (
@@ -747,6 +826,7 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                             $5, $6, $7, $8,
                             $9
                         )
+                    RETURNING id
                 ",
                 &[
                     &company, &vehicle_number, &type_code, &vehicle_class,
@@ -754,10 +834,48 @@ async fn handle_add_edit(_remote_addr: SocketAddr, request: Request<Incoming>, e
                     &other_data,
                 ],
             ).await;
-            if let Err(e) = insert_res {
-                error!("failed to insert vehicle: {}", e);
+            match insert_res {
+                Ok(row) => {
+                    let inserted_id: i64 = row.get(0);
+                    inserted_id
+                },
+                Err(e) => {
+                    error!("failed to insert vehicle: {}", e);
+                    return return_500();
+                },
+            }
+        };
+
+        // replace power sources
+        let delete_power_sources_res = transact.execute(
+            "DELETE FROM bimdb.power_sources WHERE bim_id = $1",
+            &[&bim_id],
+        ).await;
+        if let Err(e) = delete_power_sources_res {
+            error!("failed to delete power sources for {}: {}", bim_id, e);
+            return return_500();
+        }
+
+        let insert_stmt_res = transact.prepare(
+            "INSERT INTO bimdb.power_sources (bim_id, power_source) VALUES ($1, $2)",
+        ).await;
+        let insert_stmt = match insert_stmt_res {
+            Ok(is) => is,
+            Err(e) => {
+                error!("failed to prepare insert-power-source statement: {}", e);
+                return return_500();
+            },
+        };
+        for power_source in &power_sources {
+            if let Err(e) = transact.execute(&insert_stmt, &[&bim_id, &power_source.as_str()]).await {
+                error!("failed to insert power source {:?} for {}: {}", power_source, bim_id, e);
                 return return_500();
             }
+        }
+
+        if let Err(e) = transact.commit().await {
+            error!("failed to commit vehicle insertion/editing transaction: {}", e);
+            return return_500();
         }
 
         let base_path_or_slash = if base_path.len() == 0 { "/" } else { base_path };

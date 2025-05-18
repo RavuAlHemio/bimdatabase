@@ -40,6 +40,6 @@ impl DbConfig {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct ValueSetConfig {
-    #[serde(default)] pub vehicle_types: BTreeSet<String>,
+    #[serde(default)] pub vehicle_classes: BTreeSet<String>,
     #[serde(default)] pub power_sources: BTreeSet<String>,
 }

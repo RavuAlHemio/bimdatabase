@@ -53,7 +53,31 @@
         <label for="bimdb-ae-veh-class">Vehicle class:</label>
       </td>
       <td>
-        <input type="text" id="bimdb-ae-veh-class" name="veh-class" minlength="1" maxlength="32"{% if let Some(value) = veh_class %} value="{{ value }}"{% endif %} />
+        {% if allowed_veh_classes.len() > 0 %}
+          <select id="bimdb-ae-veh-class" name="veh-class">
+            {% for allowed_veh_class in allowed_veh_classes %}
+              <option value="{{ allowed_veh_class }}"{% if let Some(value) = veh_class %}{% if allowed_veh_class == value %} selected="selected"{% endif %}{% endif %}>{{ allowed_veh_class }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input type="text" id="bimdb-ae-veh-class" name="veh-class" minlength="1" maxlength="32"{% if let Some(value) = veh_class %} value="{{ value }}"{% endif %} />
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="bimdb-ae-power-sources">Power sources:</label>
+      </td>
+      <td>
+        {% if allowed_power_sources.len() > 0 %}
+          <select id="bimdb-ae-power-sources" name="power-source" multiple="multiple">
+            {% for power_source in allowed_power_sources %}
+              <option value="{{ power_source }}"{% if power_sources.contains(power_source.as_str()) %} selected="selected"{% endif %}>{{ power_source }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <textarea id="bimdb-ae-power-sources" name="power-source">{% for power_source in power_sources %}{% if !loop.first %}&#10;{% endif %}{{ power_source }}{% endfor %}</textarea>
+        {% endif %}
       </td>
     </tr>
     <tr>

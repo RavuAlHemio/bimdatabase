@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 
-pub(crate) fn url<S: AsRef<str>>(string: S) -> askama::Result<String, askama::Error> {
+pub(crate) fn url<S: AsRef<str>>(string: S, _runtime_values: &dyn askama::Values) -> askama::Result<String, askama::Error> {
     let s = string.as_ref();
     let mut ret = String::with_capacity(s.len());
     for c in s.chars() {
