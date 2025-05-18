@@ -491,7 +491,7 @@ async fn handle_export(_remote_addr: SocketAddr, request: Request<Incoming>, for
         "
         SELECT
             b.id, b.veh_number, b.type_code, b.veh_class,
-            b.in_service_since, b.out_of_service_since, b.manufacturer, b.depot
+            b.in_service_since, b.out_of_service_since, b.manufacturer, b.depot,
             b.other_data
         FROM
             bimdb.bims b
