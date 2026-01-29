@@ -14,7 +14,7 @@
 <h1>Add Vehicle to Bim Database</h1>
 {% endif %}
 
-{% call m::link_bar(base_path) %}
+{% call m::link_bar(base_path) %}{% endcall %}
 
 {% if let Some(id) = edit_id %}
 <form method="post" action="delete?id={{ id }}">

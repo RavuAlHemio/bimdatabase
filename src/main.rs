@@ -131,7 +131,7 @@ enum ExportFormat {
 }
 
 
-fn path_to_parts(path: &str, strip_first_empty: bool) -> Option<Vec<Cow<str>>> {
+fn path_to_parts<'a>(path: &'a str, strip_first_empty: bool) -> Option<Vec<Cow<'a, str>>> {
     let mut ret = Vec::new();
     let mut first_round = true;
     for piece in path.split('/') {
